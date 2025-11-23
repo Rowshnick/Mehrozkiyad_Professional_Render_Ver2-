@@ -1,3 +1,11 @@
 python-telegram-bot==20.7
 aiohttp==3.9.5
 pytz
+python-telegram-bot[webhooks]==21.7
+pillow==11.1.0
+requests==2.32.3
+python-dotenv==1.2.1
+httpx==0.28.1
+persiantools==3.0.0
+pytz==2025.2
+pyswisseph==2.10.3.2
