@@ -14,4 +14,11 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name
+    - name: Show repo files (debug)
+      run: ls -R .
+
+    - name: Make script executable
+      run: chmod +x ./script.sh
+
+    - name: Run script
+      run: ./script.sh
