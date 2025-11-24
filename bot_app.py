@@ -19,10 +19,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# -------------------------------
 # States
+# -------------------------------
 SELECT_LANGUAGE, ENTER_YEAR, ENTER_MONTH, ENTER_DAY, SHOW_RESULTS = range(5)
 
+# -------------------------------
 # Load environment variables
+# -------------------------------
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
@@ -61,28 +65,24 @@ async def language_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ENTER_YEAR
 
 # -------------------------------
-# Persian or Gregorian Date Input
+# Date Input
 # -------------------------------
 async def enter_year(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["year"] = int(update.message.text)
-
     lang = context.user_data.get("lang")
     if lang == "fa":
         await update.message.reply_text("ماه تولد را وارد کنید (1 تا 12):")
     else:
         await update.message.reply_text("Enter your birth month (1-12):")
-
     return ENTER_MONTH
 
 async def enter_month(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["month"] = int(update.message.text)
-
     lang = context.user_data.get("lang")
     if lang == "fa":
         await update.message.reply_text("روز تولد را وارد کنید (1 تا 31):")
     else:
         await update.message.reply_text("Enter your birth day (1-31):")
-
     return ENTER_DAY
 
 async def enter_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -92,7 +92,6 @@ async def enter_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get("lang")
 
     try:
-        # Convert Jalali → Gregorian automatically for Persian users
         if lang == "fa":
             gregorian = JalaliDate(year, month, day).to_gregorian()
             birth_date = datetime(gregorian.year, gregorian.month, gregorian.day)
@@ -108,7 +107,6 @@ async def enter_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ Invalid date. Please try again.")
         return ENTER_DAY
 
-    # Horoscope calculation
     result = astro.get_horoscope(birth_date)
 
     if lang == "fa":
@@ -117,7 +115,13 @@ async def enter_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🎯 Your horoscope:\n\n{result}")
 
     return ConversationHandler.END
-    
+
+# -------------------------------
+# Health Check
+# -------------------------------
+async def health(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Health OK - Bot is running ✔")
+
 # -------------------------------
 # Main
 # -------------------------------
@@ -134,30 +138,22 @@ def main():
         },
         fallbacks=[CommandHandler("start", start)],
     )
-
     application.add_handler(conv_handler)
 
-    # ➤ مسیر Health Check
-    async def health(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("Health OK - Bot is running ✔")
-
+    # Health Check
     application.add_handler(CommandHandler("health", health))
 
-    # -----------------------------
-    # Webhook config (Render)
-    # -----------------------------
+    # Webhook setup for Render
     PORT = int(os.environ.get("PORT", 8000))
-
     WEBHOOK_PATH = "/webhook"
-    WEBHOOK_FULL_URL = WEBHOOK_URL + WEBHOOK_PATH
+    WEBHOOK_FULL_URL = WEBHOOK_URL.rstrip("/") + WEBHOOK_PATH
 
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        url_path=WEBHOOK_PATH,      # ← مسیر واقعی وبهوک
+        url_path=WEBHOOK_PATH,
         webhook_url=WEBHOOK_FULL_URL
     )
-
 
 if __name__ == "__main__":
     main()
