@@ -1,13 +1,17 @@
+
+# render.yaml
 services:
   - type: web
     name: mehrozkiyad-bot
     env: python
-    pythonVersion: "3.12.15"
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python bot_app.py"
-envVars:
-  - key: BOT_TOKEN
-    sync: false
-  - key: WEBHOOK_URL
-    sync: false
+    pythonVersion: 3.12.10  # نسخه سازگار با Flask و دیگر پکیج‌ها
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python bot_app.py
+    envVars:
+      - key: BOT_TOKEN
+        value: "8555233519:AAFeKZgy4xGYjl_ibUEmVuC7HHv-Eo0FCww"
+        sync: false
+      - key: WEBHOOK_URL
+        value: "https://mehrozkiyad-professional-render-ver2.onrender.com/webhook"
+        sync: false
 
