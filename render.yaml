@@ -1,13 +1,13 @@
 services:
   - type: web
-    name: telegram-bot
+    name: mehrozkiyad-bot
     env: python
-    buildCommand: |
-      pip install --upgrade pip
-      pip install -r requirements.txt
+    pythonVersion: "3.12.15"
+    buildCommand: "pip install -r requirements.txt"
     startCommand: "python bot_app.py"
 envVars:
   - key: BOT_TOKEN
     sync: false
   - key: WEBHOOK_URL
     sync: false
+
