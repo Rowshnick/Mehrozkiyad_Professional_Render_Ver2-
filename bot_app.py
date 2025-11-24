@@ -117,7 +117,7 @@ async def enter_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🎯 Your horoscope:\n\n{result}")
 
     return ConversationHandler.END
-
+    
 # -------------------------------
 # Main
 # -------------------------------
@@ -127,7 +127,7 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            SELECT_LANGUAGE: [CallbackQueryHandler(language_choice)],   # ✔ اصلاح شد
+            SELECT_LANGUAGE: [CallbackQueryHandler(language_choice)],
             ENTER_YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_year)],
             ENTER_MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_month)],
             ENTER_DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_day)],
@@ -137,16 +137,27 @@ def main():
 
     application.add_handler(conv_handler)
 
+    # ➤ مسیر Health Check
+    async def health(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("Health OK - Bot is running ✔")
+
+    application.add_handler(CommandHandler("health", health))
+
     # -----------------------------
-    # Correct Webhook configuration for Render
+    # Webhook config (Render)
     # -----------------------------
     PORT = int(os.environ.get("PORT", 8000))
 
+    WEBHOOK_PATH = "/webhook"
+    WEBHOOK_FULL_URL = WEBHOOK_URL + WEBHOOK_PATH
+
     application.run_webhook(
         listen="0.0.0.0",
-        port=PORT,                    # ✔ استفاده از پورت Render
-        webhook_url=WEBHOOK_URL       # ✔ بدون پورت اضافه
+        port=PORT,
+        url_path=WEBHOOK_PATH,      # ← مسیر واقعی وبهوک
+        webhook_url=WEBHOOK_FULL_URL
     )
+
 
 if __name__ == "__main__":
     main()
