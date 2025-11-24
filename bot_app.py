@@ -1,143 +1,152 @@
 import os
+import logging
 from datetime import datetime
-import swisseph as swe
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import ReplyKeyboardMarkup, Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
-    CallbackQueryHandler, ContextTypes, filters, ConversationHandler
+    ContextTypes, filters, ConversationHandler, CallbackQueryHandler
 )
-from dotenv import load_dotenv
 from persiantools.jdatetime import JalaliDate
-import requests
+from pytz import timezone
+from dotenv import load_dotenv
+from utils import astro, healing
 
-# بارگذاری متغیرهای محیطی
 load_dotenv()
-TOKEN = os.getenv("BOT_TOKEN")
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# States
+SELECT_LANGUAGE, ENTER_YEAR, ENTER_MONTH, ENTER_DAY, SHOW_RESULTS = range(5)
+
+# Load environment variables
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-PORT = int(os.environ.get("PORT", 8443))  # Render پورت اختصاصی خودش را می‌دهد
 
 if not TOKEN or not WEBHOOK_URL:
-    raise ValueError("❌ BOT_TOKEN یا WEBHOOK_URL تنظیم نشده است!")
+    raise ValueError("❌ TELEGRAM_TOKEN یا WEBHOOK_URL در فایل env تنظیم نشده است.")
 
-# Conversation states
-SELECT_LANGUAGE, GET_YEAR, GET_MONTH, GET_DAY, SHOW_HOROSCOPE = range(5)
-user_data_store = {}
-
-# دکمه‌های زبان
-LANG_KEYBOARD = [
-    [InlineKeyboardButton("فارسی", callback_data="fa")],
-    [InlineKeyboardButton("English", callback_data="en")]
-]
-
-# هوروسکوپ
-def generate_horoscope_text(birth_date: datetime, lang="fa") -> str:
-    jd = swe.julday(birth_date.year, birth_date.month, birth_date.day)
-    planets = {
-        "Sun": swe.SUN, "Moon": swe.MOON, "Mercury": swe.MERCURY,
-        "Venus": swe.VENUS, "Mars": swe.MARS, "Jupiter": swe.JUPITER,
-        "Saturn": swe.SATURN, "Uranus": swe.URANUS, "Neptune": swe.NEPTUNE,
-        "Pluto": swe.PLUTO
-    }
-    horoscope = ""
-    for name, code in planets.items():
-        lon, lat, _ = swe.calc(jd, code)[:3]
-        horoscope += f"{name}: Longitude={lon:.2f}, Latitude={lat:.2f}\n"
-    horoscope += "\nپیشنهاد: روی خودشناسی و روابط تمرکز کنید.\n" if lang=="fa" else "\nSuggestion: Focus on self-awareness and relationships.\n"
-    return horoscope
-
-# Handlers
+# -------------------------------
+# Start command
+# -------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = InlineKeyboardMarkup(LANG_KEYBOARD)
+    keyboard = [
+        [InlineKeyboardButton("فارسی 🇮🇷", callback_data="fa")],
+        [InlineKeyboardButton("English 🇬🇧", callback_data="en")]
+    ]
     await update.message.reply_text(
-        "لطفاً زبان خود را انتخاب کنید / Please select your language:", 
-        reply_markup=keyboard
+        "لطفاً زبان مورد نظر را انتخاب کنید:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
     return SELECT_LANGUAGE
 
+# -------------------------------
+# Language selection
+# -------------------------------
 async def language_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
     lang = query.data
-    user_data_store[query.from_user.id] = {"lang": lang}
-    await query.message.reply_text(
-        "زبان انتخاب شد: {}\nلطفاً سال تولد خود را وارد کنید (مثال: 1402 یا 1983):".format(lang)
-    )
-    return GET_YEAR
+    context.user_data["lang"] = lang
 
-async def get_year(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if not text.isdigit():
-        await update.message.reply_text("لطفاً فقط عدد وارد کنید.")
-        return GET_YEAR
-    user_data_store[update.message.from_user.id]["year"] = int(text)
-    await update.message.reply_text("لطفاً ماه تولد خود را وارد کنید (1-12):")
-    return GET_MONTH
-
-async def get_month(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if not text.isdigit() or not (1 <= int(text) <= 12):
-        await update.message.reply_text("لطفاً ماه را بین 1 تا 12 وارد کنید.")
-        return GET_MONTH
-    user_data_store[update.message.from_user.id]["month"] = int(text)
-    await update.message.reply_text("لطفاً روز تولد خود را وارد کنید (1-31):")
-    return GET_DAY
-
-async def get_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if not text.isdigit() or not (1 <= int(text) <= 31):
-        await update.message.reply_text("لطفاً روز را بین 1 تا 31 وارد کنید.")
-        return GET_DAY
-
-    uid = update.message.from_user.id
-    user_data_store[uid]["day"] = int(text)
-
-    # تبدیل تاریخ شمسی به میلادی اگر لازم باشد
-    year = user_data_store[uid]["year"]
-    month = user_data_store[uid]["month"]
-    day = user_data_store[uid]["day"]
-
-    if year > 1700:
-        try:
-            birth_date = JalaliDate(year, month, day).to_gregorian()
-        except:
-            await update.message.reply_text("تاریخ وارد شده نامعتبر است.")
-            return GET_YEAR
+    if lang == "fa":
+        await query.message.reply_text("سال تولد را وارد کنید (مثال: 1375):")
     else:
-        birth_date = datetime(year, month, day)
+        await query.message.reply_text("Enter your birth year (e.g., 1996):")
 
-    user_data_store[uid]["birth_date"] = birth_date
-    horoscope = generate_horoscope_text(birth_date, user_data_store[uid]["lang"])
-    await update.message.reply_text(horoscope)
+    return ENTER_YEAR
+
+# -------------------------------
+# Persian or Gregorian Date Input
+# -------------------------------
+async def enter_year(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["year"] = int(update.message.text)
+
+    lang = context.user_data.get("lang")
+    if lang == "fa":
+        await update.message.reply_text("ماه تولد را وارد کنید (1 تا 12):")
+    else:
+        await update.message.reply_text("Enter your birth month (1-12):")
+
+    return ENTER_MONTH
+
+async def enter_month(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["month"] = int(update.message.text)
+
+    lang = context.user_data.get("lang")
+    if lang == "fa":
+        await update.message.reply_text("روز تولد را وارد کنید (1 تا 31):")
+    else:
+        await update.message.reply_text("Enter your birth day (1-31):")
+
+    return ENTER_DAY
+
+async def enter_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    day = int(update.message.text)
+    year = context.user_data["year"]
+    month = context.user_data["month"]
+    lang = context.user_data.get("lang")
+
+    try:
+        # Convert Jalali → Gregorian automatically for Persian users
+        if lang == "fa":
+            gregorian = JalaliDate(year, month, day).to_gregorian()
+            birth_date = datetime(gregorian.year, gregorian.month, gregorian.day)
+        else:
+            birth_date = datetime(year, month, day)
+
+        context.user_data["birth_date"] = birth_date
+
+    except Exception:
+        if lang == "fa":
+            await update.message.reply_text("⚠️ تاریخ نامعتبر است. دوباره وارد کنید.")
+        else:
+            await update.message.reply_text("⚠️ Invalid date. Please try again.")
+        return ENTER_DAY
+
+    # Horoscope calculation
+    result = astro.get_horoscope(birth_date)
+
+    if lang == "fa":
+        await update.message.reply_text(f"🎯 نتیجه تحلیل:\n\n{result}")
+    else:
+        await update.message.reply_text(f"🎯 Your horoscope:\n\n{result}")
+
     return ConversationHandler.END
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("لغو شد.")
-    return ConversationHandler.END
+# -------------------------------
+# Main
+# -------------------------------
+def main():
+    application = ApplicationBuilder().token(TOKEN).build()
 
-# Application
-app = ApplicationBuilder().token(TOKEN).build()
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            SELECT_LANGUAGE: [CallbackQueryHandler(language_choice)],   # ✔ اصلاح شد
+            ENTER_YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_year)],
+            ENTER_MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_month)],
+            ENTER_DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_day)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+    )
 
-conv_handler = ConversationHandler(
-    entry_points=[CommandHandler("start", start)],
-    states={
-        SELECT_LANGUAGE: [CallbackQueryHandler(language_choice, per_message=True)],
-        GET_YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_year)],
-        GET_MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_month)],
-        GET_DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_day)],
-    },
-    fallbacks=[CommandHandler("cancel", cancel)],
-)
+    application.add_handler(conv_handler)
 
-app.add_handler(conv_handler)
+    # -----------------------------
+    # Correct Webhook configuration for Render
+    # -----------------------------
+    PORT = int(os.environ.get("PORT", 8000))
 
-# حذف webhook قبلی و ست کردن جدید
-requests.get(f"https://api.telegram.org/bot{TOKEN}/deleteWebhook")
-requests.get(f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={WEBHOOK_URL}")
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,                    # ✔ استفاده از پورت Render
+        webhook_url=WEBHOOK_URL       # ✔ بدون پورت اضافه
+    )
 
 if __name__ == "__main__":
-    print("🚀 Bot running with Webhook on Render...")
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,             # Render پورت اختصاصی خودش را می‌دهد
-        webhook_url=WEBHOOK_URL
-    )
+    main()
