@@ -1,69 +1,97 @@
 import os
-import logging
-from datetime import datetime
-from flask import Flask, request
-from telegram import Update, Bot
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, filters, CallbackContext
-from utils import astro, healing  # ماژول‌های شما بدون تغییر
-
-# -----------------------
-# تنظیمات پایه
-# -----------------------
-TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")  # حتما توکن در Render ENV قرار بگیرد
-if not TOKEN:
-    raise ValueError("توکن ربات در متغیر محیطی TELEGRAM_BOT_TOKEN تعریف نشده است!")
-
-bot = Bot(token=TOKEN)
-app = Flask(__name__)
-dp = Dispatcher(bot=bot, update_queue=None, use_context=True)
-
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+from flask import Flask, request, jsonify
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
 )
-logger = logging.getLogger(__name__)
 
-# -----------------------
-# دستورها و هندلرها
-# -----------------------
+# -----------------------------
+#  دریافت متغیرهای محیطی Render
+# -----------------------------
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+PORT = int(os.environ.get("PORT", 10000))
 
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text("سلام! ربات آماده است.")
+# -----------------------------
+#  ساخت اپلیکیشن تلگرام (بدون Dispatcher)
+# -----------------------------
+application = ApplicationBuilder().token(BOT_TOKEN).build()
 
-def help_command(update: Update, context: CallbackContext):
-    update.message.reply_text("راهنما: از دستورات موجود استفاده کنید.")
+# -----------------------------
+#  ایمپورت utils (بدون تغییر)
+# -----------------------------
+try:
+    from utils import astro, healing
+except Exception as e:
+    print("خطا در ایمپورت utils:", e)
 
-def handle_text(update: Update, context: CallbackContext):
-    text = update.message.text
-    # اینجا می‌توانید تابع astro یا healing را صدا بزنید
-    response = f"پیام شما دریافت شد: {text}"
-    update.message.reply_text(response)
+# -----------------------------
+#  تعریف هندلرها
+# -----------------------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "سلام! ربات شما فعال شد.\n"
+        "می‌توانید پیام بفرستید یا از فرمان‌ها استفاده کنید."
+    )
 
-# ثبت هندلرها
-dp.add_handler(CommandHandler("start", start))
-dp.add_handler(CommandHandler("help", help_command))
-dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+async def horoscope_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        birth_text = update.message.text.strip()
+        result = astro.get_horoscope(birth_text)
+        await update.message.reply_text(result)
+    except Exception as e:
+        await update.message.reply_text(f"خطا در تولید هوروسکوپ: {e}")
 
-# -----------------------
-# Webhook Flask
-# -----------------------
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    if request.method == "POST":
-        update = Update.de_json(request.get_json(force=True), bot)
-        dp.process_update(update)
-        return "ok", 200
+async def healing_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        text = healing.get_healing_text()
+        await update.message.reply_text(text)
+    except Exception as e:
+        await update.message.reply_text(f"خطا در تولید پیام درمانی: {e}")
 
-# -----------------------
-# مسیر تست ساده
-# -----------------------
-@app.route('/')
+# --- پیام آزاد + انتخاب گزینه و همزمان پاسخ هوشمند ---
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text
+    await update.message.reply_text(f"پیام شما دریافت شد:\n{user_text}")
+
+# -----------------------------
+#  ثبت هندلرها
+# -----------------------------
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("horoscope", horoscope_handler))
+application.add_handler(CommandHandler("healing", healing_handler))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+
+# -----------------------------
+#  Flask → Webhook endpoint
+# -----------------------------
+app = Flask(__name__)
+
+@app.route("/", methods=["GET"])
 def index():
-    return "Bot is running", 200
+    return "ربات فعال است!", 200
 
-# -----------------------
-# اجرای برنامه
-# -----------------------
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    try:
+        data = request.get_json(force=True)
+        update = Update.de_json(data, application.bot)
+        application.update_queue.put_nowait(update)
+    except Exception as e:
+        print("خطا در پردازش وب‌هوک:", e)
+    return jsonify({"ok": True})
+
+# -----------------------------
+#  اجرای Webhook روی Render
+# -----------------------------
+if __name__ == "__main__":
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path="webhook",
+        webhook_url=WEBHOOK_URL
+    )
