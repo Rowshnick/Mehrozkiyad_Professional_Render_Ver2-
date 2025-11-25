@@ -7,7 +7,7 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python bot_app.py
     envVars:
-      - key: BOT_TOKEN
+      - key: TELEGRAM_BOT_TOKEN
         value: 8555233519:AAFeKZgy4xGYjl_ibUEmVuC7HHv-Eo0FCww
         sync: false
       - key: WEBHOOK_URL
